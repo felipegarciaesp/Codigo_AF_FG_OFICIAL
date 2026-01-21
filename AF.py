@@ -45,19 +45,6 @@ print('\nResultados metodo .fit() - Distribucion Normal:')
 print(f'Promedio (fit-normal): {mu_fit_norm:.2f}')
 print(f'Desviacion estandar (fit-normal): {sigma_fit_norm:.2f}')
 
-"""
-ddof: Delta Degrees of Freedom
-- Data.std() calcula la desviacion estandar con ddof=1 (muestra).
-- stats.norm.fit() calcula la desviacion estandar con ddof=0 (poblacion).
-
-Para que la desviacion estándar calculado con el metodo .std() y el metodo .fit() sean comparables, 
-se ajusta sigma_fit_mle multiplicandolo por sqrt(n/(n-1)), donde n es el tamaño de la muestra.
-
-En resumen, con ddof=1 se obtiene la desviacion estandar de la muestra y con ddof=0 la desviacion estandar de la poblacion.
-En hidorlogia tenemos que usar ddof=1 para obtener estimaciones insesgadas de la desviacion estandar a partir de datos muestrales.
-
-"""
-
 # 2) Distribucion Log-Normal: 
 shape, loc, scale = stats.lognorm.fit(Data.iloc[:, 0], floc=0)  # floc=0 fija loc en 0
 # Ajustar shape (sigma_log) de ddof=0 a ddof=1
@@ -69,14 +56,66 @@ print(f'mu_log (fit-lognormal): {mu_log_fit:.3f}')
 print(f'sigma_log (fit-lognormal): {sigma_log_fit:.3f}')
 print(f'Scale/Mediana (fit-lognormal): {scale:.2f}')
 
-"""
-En scipy.stats.lognorm, los parámetros tienen un significado diferente al de la distribución normal:
-stats.lognorm.fit() devuelve 3 parámetros en este orden:
+# 3) Distribucion Gumbel (Valores Extremos Tipo I):
+# METODO DEL LIBRO:  Usando factores de frecuencia tabulados
 
-    1) s: sigma del log (desviación estándar de ln(X))
-    2) loc: parámetro de localización (usualmente 0 para lognormal)
-    3) scale: escala = exp(mu_log) = mediana
+# Tabla de factores de frecuencia de Gumbel (y_m y sigma_m)
+# Fuente: Chow (1964), Aparicio Mijares, Ven Te Chow
+gumbel_factors = {
+    10: (0.49520, 0.94970),
+    15: (0.51280, 1.02140),
+    20: (0.52360, 1.06280),
+    25: (0.53086, 1.09145),
+    30: (0.53622, 1.11237),
+    35: (0.54004, 1.12900),
+    40: (0.54272, 1.14132),
+    45: (0.54489, 1.15048),
+    50: (0.54664, 1.15742),
+    60: (0.54920, 1.16850),
+    70: (0.55110, 1.17620),
+    80: (0.55260, 1.18210),
+    90: (0.55380, 1.18670),
+    100: (0.55477, 1.19036)
+}
 
-Nota: Usa floc=0 para fijar el parámetro de localización en 0, que es lo estándar para distribuciones lognormales en hidrología (sin desplazamiento).
-"""
+# Obtener y_m y sigma_m para n=30
+if n in gumbel_factors:
+    y_m, sigma_m = gumbel_factors[n]
+else:
+    # Si n no está en la tabla, usar la aproximación
+    y_m = 0.5772 + np.log(np.log(n / (n - 1)))
+    sigma_m = 1.2825 / np.sqrt(np.log(n))
+    print(f'\nAdvertencia: n={n} no está en la tabla.  Usando aproximación.')
 
+print(f'\nFactores de Gumbel para n={n}:')
+print(f'y_m = {y_m:.5f}')
+print(f'sigma_m = {sigma_m:.5f}')
+
+# Calcular variable reducida y para el valor b
+y = y_m + sigma_m * (b - mu) / sigma
+
+# Calcular probabilidad de no excedencia
+F_gumbel = np.exp(-np.exp(-y))
+
+# Calcular probabilidad de excedencia
+P_gumbel = 1 - F_gumbel
+
+# Periodo de retorno
+T_gumbel = 1 / P_gumbel
+
+print('\nResultados distribucion Gumbel (Metodo del libro):')
+print(f'Variable reducida y:  {y:.4f}')
+print(f'Pbb de excedencia: {P_gumbel:.4f}')
+print(f'Periodo de retorno (años): {T_gumbel:.1f}')
+
+# Comparacion con MLE (metodo fit de scipy):
+loc_fit_gumbel, scale_fit_gumbel = stats.gumbel_r.fit(Data.iloc[:, 0])
+P_gumbel_mle = stats.gumbel_r.sf(b, loc=loc_fit_gumbel, scale=scale_fit_gumbel)
+
+print('\n' + '='*70)
+print('COMPARACION:  Metodo del libro vs MLE')
+print('='*70)
+print(f'{"Método":<30} {"P(excedencia)":<20} {"T (años)":<15}')
+print('-'*70)
+print(f'{"Gumbel (libro, momentos)":<30} {P_gumbel: <20.4f} {T_gumbel:<15.1f}')
+print(f'{"Gumbel (MLE, scipy. fit)":<30} {P_gumbel_mle:<20.4f} {1/P_gumbel_mle:<15.1f}')
